@@ -8,7 +8,12 @@ const cors = require("cors");
 const Board = require("./models/Board");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://idea-lab-client.onrender.com" // <--- YOUR FRONTEND URL
+  ]
+}));
 app.use(express.json());
 
 // Connect to MongoDB
@@ -19,7 +24,7 @@ mongoose.connect(process.env.MONGO_URL || "mongodb+srv://admin:admin@cluster0.ux
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: "https://idea-lab-client.onrender.com",
     methods: ["GET", "POST"],
   },
 });
