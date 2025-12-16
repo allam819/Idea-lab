@@ -1,0 +1,9 @@
+# Ignore heavy dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Ignore secrets and environment files
+.env
+.DS_Store
+dist/
