@@ -5,7 +5,7 @@ import { getUserIdentity } from './utils/userIdentity';
 // Get the user (either from storage or generate new)
 const user = getUserIdentity();
 
-export const socket = io("http://localhost:3001", {
+export const socket = io("https://idea-lab-server.onrender.com/", {
   // Pass the identity in the "query" (Handshake)
   query: {
     userId: user.id,

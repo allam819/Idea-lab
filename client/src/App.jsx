@@ -38,7 +38,7 @@ function Board() {
       const currentNodes = getNodes(); 
       const currentEdges = getEdges(); // Get latest edges too
       const currentViewport = getViewport();
-      await axios.post('http://localhost:3001/boards', {
+      await axios.post('https://idea-lab-server.onrender.com/boards', {
         roomId,
         nodes: currentNodes, 
         edges: currentEdges,
@@ -99,7 +99,7 @@ function Board() {
     // Initial Load
     async function fetchBoard() {
       try {
-        const response = await axios.get(`http://localhost:3001/boards/${roomId}`);
+        const response = await axios.get(`https://idea-lab-server.onrender.com/boards/${roomId}`);
         const { nodes, edges, viewport } = response.data;
 
         if (nodes) {
