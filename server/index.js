@@ -9,7 +9,10 @@ const Board = require("./models/Board");
 
 const app = express();
 app.use(cors({
-  origin: "*" // <--- allow every URL
+  origin: [
+    "https://idea-lab-client.onrender.com"
+  ],
+  credentials: true
   
 }));
 app.use(express.json());
@@ -22,7 +25,10 @@ mongoose.connect(process.env.MONGO_URL || "mongodb+srv://admin:admin@cluster0.ux
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin:[
+      //"http://localhost:5173",                 // Trust your laptop
+      "https://idea-lab-client.onrender.com"   // Trust your live website (REPLACE THIS WITH YOUR ACTUAL URL)
+    ],
     methods: ["GET", "POST"],
   },
 });
