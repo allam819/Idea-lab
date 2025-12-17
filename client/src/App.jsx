@@ -24,7 +24,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import IdeaNode from './components/IdeaNode'; 
 import ImageNode from './components/ImageNode';
-
+import useUndoRedo from './hooks/useUndoRedo';
 // --- IDENTITY HELPERS ---
 // We get a random color/id for fallback, but we'll try to use the Real Name
 const randomIdentity = getUserIdentity(); 
@@ -42,6 +42,35 @@ const ProtectedRoute = ({ children }) => {
 
 // --- THE BOARD COMPONENT ---
 function Board() {
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ctrl+Z (Undo)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        const pastState = undo();
+        if (pastState) {
+          setNodes(pastState.nodes);
+          setEdges(pastState.edges);
+        }
+      }
+
+      // Ctrl+Y or Ctrl+Shift+Z (Redo)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+        e.preventDefault();
+        const futureState = redo();
+        if (futureState) {
+          setNodes(futureState.nodes);
+          setEdges(futureState.edges);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo, setNodes, setEdges]);
+
+
+  const { takeSnapshot, undo, redo } = useUndoRedo();
   const { roomId } = useParams();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -96,13 +125,18 @@ function Board() {
     saveBoard();
   }, [roomId, setNodes, saveBoard]);
 
-  const onConnect = useCallback(
+const onConnect = useCallback(
     (params) => {
-      setEdges((eds) => addEdge(params, eds));
+      setEdges((eds) => {
+        const newEdges = addEdge(params, eds);
+        // Take snapshot of CURRENT nodes and NEW edges
+        takeSnapshot(getNodes(), newEdges); 
+        return newEdges;
+      });
       socket.emit("edge-create", { roomId, edge: params });
       saveBoard();
     },
-    [setEdges, roomId, saveBoard],
+    [setEdges, roomId, saveBoard, takeSnapshot, getNodes],
   );
 
   const onNodesDelete = useCallback((deletedNodes) => {
@@ -272,7 +306,17 @@ function Board() {
     socket.emit("node-drag", { roomId, node });
   }, [roomId]);
 
-  const onNodeDragStop = () => saveBoard();
+  const onNodeDragStop = useCallback(() => {
+    // 1. Get current state
+    const currentNodes = getNodes();
+    const currentEdges = getEdges();
+    
+    // 2. Save it to history
+    takeSnapshot(currentNodes, currentEdges);
+    
+    // 3. Save to Database
+    saveBoard();
+  }, [getNodes, getEdges, takeSnapshot, saveBoard]);
   const onMoveEnd = () => saveBoard();
 // Reference to the hidden file input
   const fileInputRef = useRef(null);
