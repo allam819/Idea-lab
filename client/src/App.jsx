@@ -179,7 +179,7 @@ function Board() {
           type: 'image', // Use our new type
           position,
           data: { src: base64String }, // Store the image data
-          style: { width: 200, height: 200 }, // Default size
+          //style: { width: 200, height: 200 }, // Default size
         };
 
         setNodes((nds) => [...nds, newNode]);
@@ -298,7 +298,7 @@ function Board() {
         type: 'image', 
         position: { x: Math.random() * 400, y: Math.random() * 400 }, 
         data: { src: base64String }, 
-        style: { width: 200, height: 200 }, // Default size
+        //style: { width: 200, height: 200 }, // Default size
       };
 
       setNodes((nds) => [...nds, newNode]);
