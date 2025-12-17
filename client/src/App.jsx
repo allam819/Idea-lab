@@ -325,9 +325,9 @@ function Board() {
     });
     socket.on("user-disconnected", (userId) => {
       setCursors((prev) => {
-        const new = { ...prev };
-        delete new[userId];
-        return new;
+        const newCursors = { ...prev };
+        delete newCursors[userId];
+        return newCursors;
       });
     });
 
