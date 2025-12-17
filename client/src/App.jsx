@@ -21,6 +21,22 @@ import Home from './pages/Home';
 import IdeaNode from './components/IdeaNode'; 
 import Login from './pages/Login';
 import Register from './pages/Register';
+
+const getSmartIdentity = () => {
+  const savedUser = localStorage.getItem('user');
+  const randomIdentity = getUserIdentity(); // Always get a color from here
+
+  if (savedUser) {
+    const parsed = JSON.parse(savedUser);
+    return {
+      id: parsed.id,       // Real DB ID
+      name: parsed.name,   // Real Name (e.g. "Master Coder")
+      color: randomIdentity.color // Keep the random color (or save color in DB later)
+    };
+  }
+  return randomIdentity; // Fallback to "Calm Tiger"
+};
+
 const me = getUserIdentity(); 
 
 function Board() {
