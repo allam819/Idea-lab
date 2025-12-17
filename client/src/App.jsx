@@ -340,7 +340,8 @@ function Board() {
         onMoveEnd={onMoveEnd}
         connectionMode={ConnectionMode.Loose} 
         onDragOver={onDragOver} 
-        onDrop={onDrop}        
+        onDrop={onDrop}  
+        
       >
         <Background variant="dots" gap={12} size={1} />
         <Controls />

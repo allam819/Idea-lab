@@ -1,23 +1,17 @@
 // client/src/components/ImageNode.jsx
 import React, { memo } from 'react';
-import { Handle, Position, NodeResizer } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 
 const ImageNode = ({ data, selected }) => {
   return (
-    <div style={{ position: 'relative' }}>
-      {/* NodeResizer: Allows resizing. 
-         - isVisible={selected}: Only shows purple borders when clicked.
-         - handleStyle: Makes the resize dots purple squares.
-      */}
-      <NodeResizer 
-        color="#8e24aa" 
-        isVisible={selected} 
-        minWidth={100} 
-        minHeight={100}
-        handleStyle={{ width: 8, height: 8, borderRadius: 2 }} 
-      />
+    <div style={{ 
+      position: 'relative', 
+      width: '200px', 
+      height: '200px',
+      borderRadius: '5px',
+    }}>
       
-      {/* The Image */}
+      {/* THE IMAGE */}
       <img 
         src={data.src} 
         alt="Upload" 
@@ -27,45 +21,59 @@ const ImageNode = ({ data, selected }) => {
           borderRadius: '5px', 
           objectFit: 'cover',
           display: 'block',
-          boxShadow: selected ? '0 0 0 2px #8e24aa' : 'none' // Purple border when selected
+          boxShadow: selected ? '0 0 0 2px #8e24aa' : 'none', 
         }} 
       />
 
-      {/* --- CONNECTION HANDLES (The Dots) --- */}
-      {/* We add 'id' to each handle so lines know exactly where to snap. 
-          We set 'type="source"' because ConnectionMode.Loose allows any-to-any. 
-      */}
+      {/* --- CONNECTION DOTS --- */}
+      {/* We manually position them to be 100% sure they are on the edges */}
 
-      {/* Top Handle */}
+      {/* TOP DOT */}
       <Handle 
         type="source" 
         position={Position.Top} 
         id="top" 
-        style={{ background: '#555', width: 8, height: 8, border: '2px solid white' }} 
+        style={{ 
+          top: -5, 
+          left: '50%', 
+          width: 10, height: 10, background: '#555', border: '2px solid white', zIndex: 10 
+        }} 
       />
 
-      {/* Right Handle */}
+      {/* RIGHT DOT */}
       <Handle 
         type="source" 
         position={Position.Right} 
         id="right" 
-        style={{ background: '#555', width: 8, height: 8, border: '2px solid white' }} 
+        style={{ 
+          top: '50%', 
+          right: -5, 
+          width: 10, height: 10, background: '#555', border: '2px solid white', zIndex: 10 
+        }} 
       />
 
-      {/* Bottom Handle */}
+      {/* BOTTOM DOT */}
       <Handle 
         type="source" 
         position={Position.Bottom} 
         id="bottom" 
-        style={{ background: '#555', width: 8, height: 8, border: '2px solid white' }} 
+        style={{ 
+          bottom: -5, 
+          left: '50%', 
+          width: 10, height: 10, background: '#555', border: '2px solid white', zIndex: 10 
+        }} 
       />
 
-      {/* Left Handle */}
+      {/* LEFT DOT */}
       <Handle 
         type="source" 
         position={Position.Left} 
         id="left" 
-        style={{ background: '#555', width: 8, height: 8, border: '2px solid white' }} 
+        style={{ 
+          top: '50%', 
+          left: -5, 
+          width: 10, height: 10, background: '#555', border: '2px solid white', zIndex: 10 
+        }} 
       />
     </div>
   );
