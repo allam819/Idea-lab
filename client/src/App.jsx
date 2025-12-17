@@ -1,6 +1,6 @@
 // client/src/App.jsx
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
-import { BrowserRouter, Routes, Route, useParams,Link,Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useParams, Navigate } from 'react-router-dom';
 import { 
   ReactFlow, 
   Background, 
@@ -10,52 +10,66 @@ import {
   addEdge,
   ReactFlowProvider,
   useReactFlow,
-  ConnectionMode // <--- 1. NEW IMPORT: Allows connecting any handle to any handle
+  ConnectionMode 
 } from '@xyflow/react';
 import axios from 'axios'; 
 
 import '@xyflow/react/dist/style.css'; 
 import { socket } from './socket';
 import { getUserIdentity } from './utils/userIdentity';
+
+// Import Pages & Components
 import Home from './pages/Home';
-import IdeaNode from './components/IdeaNode'; 
 import Login from './pages/Login';
 import Register from './pages/Register';
+import IdeaNode from './components/IdeaNode'; 
 
-const getSmartIdentity = () => {
-  const savedUser = localStorage.getItem('user');
-  const randomIdentity = getUserIdentity(); // Always get a color from here
+// --- IDENTITY HELPERS ---
+// We get a random color/id for fallback, but we'll try to use the Real Name
+const randomIdentity = getUserIdentity(); 
+const me = randomIdentity; 
 
-  if (savedUser) {
-    const parsed = JSON.parse(savedUser);
-    return {
-      id: parsed.id,       // Real DB ID
-      name: parsed.name,   // Real Name (e.g. "Master Coder")
-      color: randomIdentity.color // Keep the random color (or save color in DB later)
-    };
+// --- PROTECTED ROUTE COMPONENT ---
+// Blocks access if you aren't logged in
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return <Navigate to="/login" replace />;
   }
-  return randomIdentity; // Fallback to "Calm Tiger"
+  return children;
 };
 
-const me = getUserIdentity(); 
-
+// --- THE BOARD COMPONENT ---
 function Board() {
   const { roomId } = useParams();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [cursors, setCursors] = useState({});
-  const { getNodes, getEdges, getViewport, setViewport } = useReactFlow(); 
+
+  // NEW: React Flow Helpers for Coordinate Conversion
+  const { 
+    getNodes, 
+    getEdges, 
+    getViewport, 
+    setViewport, 
+    screenToFlowPosition, // Converts Mouse -> Canvas
+    flowToScreenPosition  // Converts Canvas -> Mouse
+  } = useReactFlow(); 
 
   const nodeTypes = useMemo(() => ({ idea: IdeaNode }), []);
 
-  // --- HELPER: Save to DB ---
+  // --- SAVE TO DB ---
   const saveBoard = useCallback(async () => {
-    // We wait a brief moment to ensure state is settled before saving
     setTimeout(async () => {
       const currentNodes = getNodes(); 
-      const currentEdges = getEdges(); // Get latest edges too
+      const currentEdges = getEdges(); 
       const currentViewport = getViewport();
-      await axios.post('https://idea-lab-server.onrender.com/boards', {
+      
+      // Use the Render URL (or localhost if testing locally)
+      const API_URL = 'https://idea-lab-server.onrender.com'; 
+      // const API_URL = 'http://localhost:3001'; // Uncomment for local testing
+
+      await axios.post(`${API_URL}/boards`, {
         roomId,
         nodes: currentNodes, 
         edges: currentEdges,
@@ -65,8 +79,6 @@ function Board() {
   }, [getNodes, getEdges, getViewport, roomId]);
 
   // --- HANDLERS ---
-
-  // 1. Text Changes
   const onNodeTextChange = useCallback((id, newText) => {
     setNodes((nds) =>
       nds.map((node) => {
@@ -77,46 +89,67 @@ function Board() {
       })
     );
     socket.emit("text-change", { roomId, id, text: newText });
-    saveBoard(); // Save text changes
+    saveBoard();
   }, [roomId, setNodes, saveBoard]);
 
-  // 2. Connections (Drawing Lines) - FIX FOR ISSUE #2
   const onConnect = useCallback(
     (params) => {
-      // Update Local
       setEdges((eds) => addEdge(params, eds));
-      // Broadcast to Socket
       socket.emit("edge-create", { roomId, edge: params });
-      // Save
       saveBoard();
     },
     [setEdges, roomId, saveBoard],
   );
 
-  // 3. Deleting Nodes - FIX FOR ISSUE #3
   const onNodesDelete = useCallback((deletedNodes) => {
     const ids = deletedNodes.map(n => n.id);
     socket.emit("nodes-delete", { roomId, ids });
     saveBoard();
   }, [roomId, saveBoard]);
 
-  // 4. Deleting Edges - FIX FOR ISSUE #3
   const onEdgesDelete = useCallback((deletedEdges) => {
     const ids = deletedEdges.map(e => e.id);
     socket.emit("edges-delete", { roomId, ids });
     saveBoard();
   }, [roomId, saveBoard]);
 
+  // --- MOUSE MOVE (THE FIX) ---
+  const onMouseMove = (e) => {
+    if (!socket.id) return;
+
+    // 1. Get Real Name from Storage (Live check)
+    const storedUserString = localStorage.getItem('user');
+    let currentName = me.name; 
+    if (storedUserString) {
+      const storedUser = JSON.parse(storedUserString);
+      if (storedUser.name) currentName = storedUser.name;
+    }
+
+    // 2. Convert Screen Pixels -> Canvas World Coordinates
+    // This ensures that X:100 is always X:100 on the board, regardless of zoom
+    const flowPosition = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+
+    const myCursor = { 
+      x: flowPosition.x, 
+      y: flowPosition.y, 
+      userId: socket.id, 
+      userName: currentName, 
+      userColor: me.color,
+      roomId 
+    };
+    socket.emit("cursor-move", myCursor);
+  };
 
   // --- SOCKET LISTENERS ---
   useEffect(() => {
-    // Join Room
     socket.emit("join-room", roomId);
 
-    // Initial Load
+    const API_URL = 'https://idea-lab-server.onrender.com';
+    // const API_URL = 'http://localhost:3001'; 
+
     async function fetchBoard() {
       try {
-        const response = await axios.get(`https://idea-lab-server.onrender.com/boards/${roomId}`);
+        const response = await axios.get(`${API_URL}/boards/${roomId}`);
         const { nodes, edges, viewport } = response.data;
 
         if (nodes) {
@@ -134,19 +167,12 @@ function Board() {
     }
     fetchBoard();
 
-    // Event: Node Moved
     socket.on("node-drag", (incomingNode) => {
       setNodes((nds) =>
-        nds.map((node) => {
-          if (node.id === incomingNode.id) {
-             return { ...incomingNode, data: { ...incomingNode.data, onChange: onNodeTextChange } };
-          }
-          return node;
-        })
+        nds.map((node) => node.id === incomingNode.id ? { ...incomingNode, data: { ...incomingNode.data, onChange: onNodeTextChange } } : node)
       );
     });
 
-    // Event: Node Created
     socket.on("node-create", (newNode) => {
       setNodes((nds) => {
         if (nds.find(n => n.id === newNode.id)) return nds;
@@ -154,34 +180,16 @@ function Board() {
       });
     });
 
-    // Event: Text Changed
     socket.on("text-change", ({ id, text }) => {
       setNodes((nds) =>
-        nds.map((node) => {
-          if (node.id === id) {
-            return { ...node, data: { ...node.data, label: text, onChange: onNodeTextChange } };
-          }
-          return node;
-        })
+        nds.map((node) => node.id === id ? { ...node, data: { ...node.data, label: text, onChange: onNodeTextChange } } : node)
       );
     });
 
-    // Event: Edge Created (Line Drawn)
-    socket.on("edge-create", (edge) => {
-      setEdges((eds) => addEdge(edge, eds));
-    });
+    socket.on("edge-create", (edge) => setEdges((eds) => addEdge(edge, eds)));
+    socket.on("nodes-delete", (ids) => setNodes((nds) => nds.filter((n) => !ids.includes(n.id))));
+    socket.on("edges-delete", (ids) => setEdges((eds) => eds.filter((e) => !ids.includes(e.id))));
 
-    // Event: Nodes Deleted
-    socket.on("nodes-delete", (ids) => {
-      setNodes((nds) => nds.filter((n) => !ids.includes(n.id)));
-    });
-
-    // Event: Edges Deleted
-    socket.on("edges-delete", (ids) => {
-      setEdges((eds) => eds.filter((e) => !ids.includes(e.id)));
-    });
-
-    // Event: Cursors
     socket.on("cursor-move", (data) => {
       if (!data.userId) return;
       setCursors((prev) => ({ ...prev, [data.userId]: data }));
@@ -207,7 +215,6 @@ function Board() {
     };
   }, [roomId, setNodes, setEdges, setViewport, onNodeTextChange]); 
 
-
   // --- UI ACTIONS ---
   const onNodeDrag = useCallback((_, node) => {
     socket.emit("node-drag", { roomId, node });
@@ -216,35 +223,12 @@ function Board() {
   const onNodeDragStop = () => saveBoard();
   const onMoveEnd = () => saveBoard();
 
-const onMouseMove = (e) => {
-    if (!socket.id) return;
-
-    // 1. Check LocalStorage LIVE for the user name
-    // (This ensures we see the name even if we just logged in without refreshing)
-    const storedUserString = localStorage.getItem('user');
-    let currentName = me.name; // Default to random name
-    
-    if (storedUserString) {
-      const storedUser = JSON.parse(storedUserString);
-      if (storedUser.name) {
-        currentName = storedUser.name; // Use Real Name
-      }
-    }
-
-    const myCursor = { 
-      x: e.clientX, y: e.clientY, 
-      userId: socket.id, 
-      userName: currentName, // <--- Send the FRESH name
-      userColor: me.color,   // Keep random color for now
-      roomId 
-    };
-    socket.emit("cursor-move", myCursor);
-  };
   const addCard = () => {
     const newNode = { 
       id: Date.now().toString(), 
       type: 'idea', 
-      position: { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 }, 
+      // Random position slightly offset from center
+      position: { x: Math.random() * 300, y: Math.random() * 300 }, 
       data: { label: 'New Idea', onChange: onNodeTextChange }, 
     };
     setNodes((nds) => [...nds, newNode]);
@@ -260,29 +244,45 @@ const onMouseMove = (e) => {
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onConnect={onConnect}      // Handles drawing lines
-        onNodesDelete={onNodesDelete} // Handles deleting nodes
-        onEdgesDelete={onEdgesDelete} // Handles deleting lines
+        onConnect={onConnect}      
+        onNodesDelete={onNodesDelete} 
+        onEdgesDelete={onEdgesDelete} 
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop} 
         onMoveEnd={onMoveEnd}
-        connectionMode={ConnectionMode.Loose} // <--- FIX FOR ISSUE #1
+        connectionMode={ConnectionMode.Loose} 
       >
         <Background variant="dots" gap={12} size={1} />
         <Controls />
       </ReactFlow>
 
-      {/* Cursors */}
-      {Object.entries(cursors).map(([userId, cursor]) => (
-        <div key={userId} style={{ position: 'absolute', left: cursor.x, top: cursor.y, pointerEvents: 'none', zIndex: 9999, transition: 'all 0.1s ease', transform: 'translate(-50%, -50%)' }}>
-          <div style={{ width: '12px', height: '12px', backgroundColor: cursor.userColor || 'red', borderRadius: '50%' }} />
-          <div style={{ backgroundColor: cursor.userColor || 'red', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', marginTop: '4px', whiteSpace: 'nowrap' }}>
-            {cursor.userName || "Guest"}
+      {/* --- RENDER CURSORS (THE FIX) --- */}
+      {Object.entries(cursors).map(([userId, cursor]) => {
+        // Convert "World" coordinates back to "Screen" coordinates for drawing
+        const screenPos = flowToScreenPosition({ x: cursor.x, y: cursor.y });
+        
+        // If cursor is off-screen, don't render it
+        if (!screenPos) return null;
+
+        return (
+          <div key={userId} style={{ 
+            position: 'absolute', 
+            left: screenPos.x, 
+            top: screenPos.y, 
+            pointerEvents: 'none', 
+            zIndex: 9999, 
+            transition: 'all 0.1s ease', 
+            transform: 'translate(-50%, -50%)' 
+          }}>
+            <div style={{ width: '12px', height: '12px', backgroundColor: cursor.userColor || 'red', borderRadius: '50%' }} />
+            <div style={{ backgroundColor: cursor.userColor || 'red', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', marginTop: '4px', whiteSpace: 'nowrap' }}>
+              {cursor.userName || "Guest"}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       
-      {/* Buttons */}
+      {/* UI Overlay */}
       <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10 }}>
         <button onClick={addCard} style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: '#FFD700', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}>
           + Sticky Note
@@ -294,24 +294,17 @@ const onMouseMove = (e) => {
     </div>
   );
 }
-// Helper: Only allow access if logged in
-const ProtectedRoute = ({ children }) => {
-  const token = localStorage.getItem('token');
-  if (!token) {
-    // Redirect to login if no token found
-    return <Navigate to="/login" replace />; // You'll need to import Navigate
-  }
-  return children;
-};
+
+// --- MAIN ROUTER ---
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* PUBLIC ROUTES */}
+        {/* Public Auth Routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* PROTECTED ROUTES (Must be logged in) */}
+        {/* Protected Routes */}
         <Route 
           path="/" 
           element={
@@ -333,4 +326,5 @@ export default function App() {
         />
       </Routes>
     </BrowserRouter>
-  )};
+  );
+}
