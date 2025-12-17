@@ -4,29 +4,32 @@ import { Handle, Position } from '@xyflow/react';
 
 const ImageNode = ({ data, selected }) => {
   return (
+    // 1. Container: 'display: inline-block' makes the div wrap tightly around the image
     <div style={{ 
       position: 'relative', 
-      width: '200px', 
-      height: '200px',
-      borderRadius: '5px',
+      display: 'inline-block',
+      lineHeight: 0 // Removes tiny gap at bottom of images
     }}>
       
-      {/* THE IMAGE */}
+      {/* 2. The Image: 
+          - maxWidth: prevents it from being huge (optional, adjust as you like)
+          - height: auto (Keeps original Aspect Ratio!)
+      */}
       <img 
         src={data.src} 
         alt="Upload" 
         style={{ 
-          width: '100%', 
-          height: '100%', 
-          borderRadius: '5px', 
-          objectFit: 'cover',
           display: 'block',
+          maxWidth: '300px', // Limits width so huge images don't cover the board
+          height: 'auto',    // <--- THIS FIXES THE SQUARE PROBLEM
+          borderRadius: '5px', 
+          objectFit: 'contain',
           boxShadow: selected ? '0 0 0 2px #8e24aa' : 'none', 
         }} 
       />
 
       {/* --- CONNECTION DOTS --- */}
-      {/* We manually position them to be 100% sure they are on the edges */}
+      {/* We use 'transform' to center them perfectly on the lines */}
 
       {/* TOP DOT */}
       <Handle 
@@ -34,8 +37,8 @@ const ImageNode = ({ data, selected }) => {
         position={Position.Top} 
         id="top" 
         style={{ 
-          top: -5, 
-          left: '50%', 
+          left: '50%', top: 0, 
+          transform: 'translate(-50%, -50%)', // Centers dot perfectly
           width: 10, height: 10, background: '#555', border: '2px solid white', zIndex: 10 
         }} 
       />
@@ -46,8 +49,8 @@ const ImageNode = ({ data, selected }) => {
         position={Position.Right} 
         id="right" 
         style={{ 
-          top: '50%', 
-          right: -5, 
+          top: '50%', right: 0, 
+          transform: 'translate(50%, -50%)', 
           width: 10, height: 10, background: '#555', border: '2px solid white', zIndex: 10 
         }} 
       />
@@ -58,8 +61,8 @@ const ImageNode = ({ data, selected }) => {
         position={Position.Bottom} 
         id="bottom" 
         style={{ 
-          bottom: -5, 
-          left: '50%', 
+          left: '50%', bottom: 0, 
+          transform: 'translate(-50%, 50%)',
           width: 10, height: 10, background: '#555', border: '2px solid white', zIndex: 10 
         }} 
       />
@@ -70,8 +73,8 @@ const ImageNode = ({ data, selected }) => {
         position={Position.Left} 
         id="left" 
         style={{ 
-          top: '50%', 
-          left: -5, 
+          top: '50%', left: 0, 
+          transform: 'translate(-50%, -50%)',
           width: 10, height: 10, background: '#555', border: '2px solid white', zIndex: 10 
         }} 
       />
