@@ -1,5 +1,5 @@
 // client/src/App.jsx
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo,useRef } from 'react';
 import { BrowserRouter, Routes, Route, useParams, Navigate } from 'react-router-dom';
 import { 
   ReactFlow, 
@@ -23,6 +23,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import IdeaNode from './components/IdeaNode'; 
+import ImageNode from './components/ImageNode';
 
 // --- IDENTITY HELPERS ---
 // We get a random color/id for fallback, but we'll try to use the Real Name
@@ -56,7 +57,10 @@ function Board() {
     flowToScreenPosition  // Converts Canvas -> Mouse
   } = useReactFlow(); 
 
-  const nodeTypes = useMemo(() => ({ idea: IdeaNode }), []);
+  const nodeTypes = useMemo(() => ({ 
+    idea: IdeaNode ,
+    image:ImageNode
+  }),[]);
 
   // --- SAVE TO DB ---
   const saveBoard = useCallback(async () => {
@@ -139,6 +143,54 @@ function Board() {
     };
     socket.emit("cursor-move", myCursor);
   };
+  // 1. Allow dragging files over the board
+  const onDragOver = useCallback((event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+  // 2. Handle dropping the file
+  const onDrop = useCallback(
+    (event) => {
+      event.preventDefault();
+
+      const file = event.dataTransfer.files[0];
+      if (!file) return;
+
+      // Check if it is actually an image
+      if (!file.type.startsWith('image/')) {
+        alert("Please drop an image file!");
+        return;
+      }
+
+      // Convert File -> Base64 String (so we can save it to DB easily)
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64String = e.target.result;
+
+        // Get drop position (converted to canvas coordinates!)
+        const position = screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        });
+
+        // Create the new Image Node
+        const newNode = {
+          id: Date.now().toString(),
+          type: 'image', // Use our new type
+          position,
+          data: { src: base64String }, // Store the image data
+          style: { width: 200, height: 200 }, // Default size
+        };
+
+        setNodes((nds) => [...nds, newNode]);
+        socket.emit("node-create", { roomId, node: newNode });
+        saveBoard();
+      };
+      
+      reader.readAsDataURL(file); // Start reading
+    },
+    [screenToFlowPosition, roomId, saveBoard, setNodes] // Dependencies
+  );
 
   // --- SOCKET LISTENERS ---
   useEffect(() => {
@@ -222,6 +274,42 @@ function Board() {
 
   const onNodeDragStop = () => saveBoard();
   const onMoveEnd = () => saveBoard();
+// Reference to the hidden file input
+  const fileInputRef = useRef(null);
+
+  // Helper: Trigger the file input when button is clicked
+  const onImageClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Handle the file selection
+  const onImageChange = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Convert to Base64
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64String = e.target.result;
+      
+      // Create Image Node (Place it near the center/randomly like sticky notes)
+      const newNode = {
+        id: Date.now().toString(),
+        type: 'image', 
+        position: { x: Math.random() * 400, y: Math.random() * 400 }, 
+        data: { src: base64String }, 
+        style: { width: 200, height: 200 }, // Default size
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+      socket.emit("node-create", { roomId, node: newNode });
+      saveBoard();
+    };
+    
+    reader.readAsDataURL(file);
+    // Reset input so you can upload the same file again if needed
+    event.target.value = ''; 
+  };
 
   const addCard = () => {
     const newNode = { 
@@ -251,6 +339,8 @@ function Board() {
         onNodeDragStop={onNodeDragStop} 
         onMoveEnd={onMoveEnd}
         connectionMode={ConnectionMode.Loose} 
+        onDragOver={onDragOver} 
+        onDrop={onDrop}        
       >
         <Background variant="dots" gap={12} size={1} />
         <Controls />
@@ -283,7 +373,14 @@ function Board() {
       })}
       
       {/* UI Overlay */}
-      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10 }}>
+      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10 ,display: 'flex', gap: '10px' }}>
+        <button 
+          onClick={onImageClick} 
+          style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
+        >
+          + Image
+        </button>
+        
         <button onClick={addCard} style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: '#FFD700', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}>
           + Sticky Note
         </button>
@@ -291,6 +388,13 @@ function Board() {
       <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, background: 'white', padding: '5px 10px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}>
         Room: <b>{roomId}</b>
       </div>
+      <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={onImageChange} 
+          accept="image/*" 
+          style={{ display: 'none' }} 
+        />
     </div>
   );
 }
