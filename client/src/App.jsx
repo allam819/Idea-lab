@@ -1,6 +1,6 @@
 // client/src/App.jsx
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
-import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useParams,Link,Navigate } from 'react-router-dom';
 import { 
   ReactFlow, 
   Background, 
@@ -19,7 +19,8 @@ import { socket } from './socket';
 import { getUserIdentity } from './utils/userIdentity';
 import Home from './pages/Home';
 import IdeaNode from './components/IdeaNode'; 
-
+import Login from './pages/Login';
+import Register from './pages/Register';
 const me = getUserIdentity(); 
 
 function Board() {
@@ -263,21 +264,43 @@ function Board() {
     </div>
   );
 }
-
+// Helper: Only allow access if logged in
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    // Redirect to login if no token found
+    return <Navigate to="/login" replace />; // You'll need to import Navigate
+  }
+  return children;
+};
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home />} />
+        {/* PUBLIC ROUTES */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
+        {/* PROTECTED ROUTES (Must be logged in) */}
+        <Route 
+          path="/" 
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          } 
+        />
+        
         <Route 
           path="/board/:roomId" 
           element={
-            <ReactFlowProvider>
-              <Board />
-            </ReactFlowProvider>
+            <ProtectedRoute>
+              <ReactFlowProvider>
+                <Board />
+              </ReactFlowProvider>
+            </ProtectedRoute>
           } 
         />
       </Routes>
     </BrowserRouter>
-  );
-}
+  )};

@@ -1,5 +1,6 @@
 // server/index.js
 require("dotenv").config();
+const authRoute= require("./routes/auth")
 const express = require("express");
 const mongoose = require("mongoose");
 const http = require("http");
@@ -83,7 +84,7 @@ io.on("connection", (socket) => {
     socket.broadcast.emit("user-disconnected", socket.id);
   });
 });
-
+app.use("/auth", authRoute);
 // API Routes
 app.get("/boards/:roomId", async (req, res) => {
   try {
@@ -112,6 +113,7 @@ app.post("/boards", async (req, res) => {
     res.status(500).json(err);
   }
 });
+ 
 
 server.listen(3001, () => {
   console.log("SERVER RUNNING ON PORT 3001");
