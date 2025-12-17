@@ -11,6 +11,7 @@ const Board = require("./models/Board");
 const app = express();
 app.use(cors({
   origin: [
+    "http://localhost:5173",  
     "https://idea-lab-client.onrender.com"
   ],
   credentials: true
@@ -27,7 +28,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin:[
-      //"http://localhost:5173",                 // Trust your laptop
+      "http://localhost:5173",                 // Trust your laptop
       "https://idea-lab-client.onrender.com"   // Trust your live website (REPLACE THIS WITH YOUR ACTUAL URL)
     ],
     methods: ["GET", "POST"],
