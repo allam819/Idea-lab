@@ -216,16 +216,30 @@ function Board() {
   const onNodeDragStop = () => saveBoard();
   const onMoveEnd = () => saveBoard();
 
-  const onMouseMove = (e) => {
+const onMouseMove = (e) => {
     if (!socket.id) return;
+
+    // 1. Check LocalStorage LIVE for the user name
+    // (This ensures we see the name even if we just logged in without refreshing)
+    const storedUserString = localStorage.getItem('user');
+    let currentName = me.name; // Default to random name
+    
+    if (storedUserString) {
+      const storedUser = JSON.parse(storedUserString);
+      if (storedUser.name) {
+        currentName = storedUser.name; // Use Real Name
+      }
+    }
+
     const myCursor = { 
       x: e.clientX, y: e.clientY, 
-      userId: socket.id, userName: me.name, userColor: me.color,
+      userId: socket.id, 
+      userName: currentName, // <--- Send the FRESH name
+      userColor: me.color,   // Keep random color for now
       roomId 
     };
     socket.emit("cursor-move", myCursor);
   };
-
   const addCard = () => {
     const newNode = { 
       id: Date.now().toString(), 
