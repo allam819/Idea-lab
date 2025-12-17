@@ -1,21 +1,23 @@
 // client/src/components/ImageNode.jsx
-import React from 'react';
+import React, { memo } from 'react';
 import { Handle, Position, NodeResizer } from '@xyflow/react';
 
-export default function ImageNode({ data, selected }) {
+const ImageNode = ({ data, selected }) => {
   return (
     <div style={{ position: 'relative' }}>
-      {/* NodeResizer: Allows you to drag the corners to resize the image 
-        'isVisible={selected}' means the handles only show when you click the image
+      {/* NodeResizer: Allows resizing. 
+         - isVisible={selected}: Only shows purple borders when clicked.
+         - handleStyle: Makes the resize dots purple squares.
       */}
       <NodeResizer 
-        color="#ff0071" 
+        color="#8e24aa" 
         isVisible={selected} 
         minWidth={100} 
-        minHeight={100} 
+        minHeight={100}
+        handleStyle={{ width: 8, height: 8, borderRadius: 2 }} 
       />
       
-      {/* The Image Itself */}
+      {/* The Image */}
       <img 
         src={data.src} 
         alt="Upload" 
@@ -24,13 +26,49 @@ export default function ImageNode({ data, selected }) {
           height: '100%', 
           borderRadius: '5px', 
           objectFit: 'cover',
-          display: 'block' // Removes weird spacing
+          display: 'block',
+          boxShadow: selected ? '0 0 0 2px #8e24aa' : 'none' // Purple border when selected
         }} 
       />
 
-      {/* Connection Handles (Hidden but functional) */}
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      {/* --- CONNECTION HANDLES (The Dots) --- */}
+      {/* We add 'id' to each handle so lines know exactly where to snap. 
+          We set 'type="source"' because ConnectionMode.Loose allows any-to-any. 
+      */}
+
+      {/* Top Handle */}
+      <Handle 
+        type="source" 
+        position={Position.Top} 
+        id="top" 
+        style={{ background: '#555', width: 8, height: 8, border: '2px solid white' }} 
+      />
+
+      {/* Right Handle */}
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        id="right" 
+        style={{ background: '#555', width: 8, height: 8, border: '2px solid white' }} 
+      />
+
+      {/* Bottom Handle */}
+      <Handle 
+        type="source" 
+        position={Position.Bottom} 
+        id="bottom" 
+        style={{ background: '#555', width: 8, height: 8, border: '2px solid white' }} 
+      />
+
+      {/* Left Handle */}
+      <Handle 
+        type="source" 
+        position={Position.Left} 
+        id="left" 
+        style={{ background: '#555', width: 8, height: 8, border: '2px solid white' }} 
+      />
     </div>
   );
-}
+};
+
+export default memo(ImageNode);
