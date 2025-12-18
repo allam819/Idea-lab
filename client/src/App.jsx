@@ -336,6 +336,22 @@ function Board() {
       });
     });
 
+const handleUndo = useCallback(() => {
+    const pastState = undo(); // 1. Calculate past state
+    if (pastState) {
+      setNodes(pastState.nodes); // 2. Update Screen
+      setEdges(pastState.edges);
+    }
+  }, [undo, setNodes, setEdges]);
+
+  const handleRedo = useCallback(() => {
+    const futureState = redo(); // 1. Calculate future state
+    if (futureState) {
+      setNodes(futureState.nodes); // 2. Update Screen
+      setEdges(futureState.edges);
+    }
+  }, [redo, setNodes, setEdges]);
+
     return () => {
       socket.off("node-drag");
       socket.off("node-create");
@@ -406,7 +422,7 @@ function Board() {
         
         {/* Undo Button */}
         <button 
-          onClick={undo} 
+          onClick={handleUndo} 
           style={{ padding: '10px 15px', fontSize: '16px', cursor: 'pointer', background: 'white', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
           title="Undo (Ctrl+Z)"
         >
@@ -415,7 +431,7 @@ function Board() {
 
         {/* Redo Button */}
         <button 
-          onClick={redo} 
+          onClick={handleRedo} 
           style={{ padding: '10px 15px', fontSize: '16px', cursor: 'pointer', background: 'white', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
           title="Redo (Ctrl+Y)"
         >
