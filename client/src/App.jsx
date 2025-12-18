@@ -68,25 +68,26 @@ function Board() {
   }), []);
 
   // --- SAVE TO DB ---
-  const saveBoard = useCallback(async () => {
-    setTimeout(async () => {
-      const currentNodes = getNodes(); 
-      const currentEdges = getEdges(); 
-      const currentViewport = getViewport();
-      
-      const API_URL = 'https://idea-lab-server.onrender.com'; 
+  // Now accepts optional 'nodes'/'edges' so we can save Undo/Redo states immediately
+  const saveBoard = useCallback(async (manualNodes, manualEdges) => {
+    // If specific nodes are passed (like from Undo), use them. Otherwise use current state.
+    const nodesToSave = manualNodes || getNodes();
+    const edgesToSave = manualEdges || getEdges();
+    const currentViewport = getViewport();
+    
+    const API_URL = 'https://idea-lab-server.onrender.com'; 
+    // const API_URL = 'http://localhost:3001'; 
 
-      try {
-        await axios.post(`${API_URL}/boards`, {
-          roomId,
-          nodes: currentNodes, 
-          edges: currentEdges,
-          viewport: currentViewport
-        });
-      } catch (err) {
-        console.error("Save failed", err);
-      }
-    }, 500);
+    try {
+      await axios.post(`${API_URL}/boards`, {
+        roomId,
+        nodes: nodesToSave, 
+        edges: edgesToSave,
+        viewport: currentViewport
+      });
+    } catch (err) {
+      console.error("Save failed", err);
+    }
   }, [getNodes, getEdges, getViewport, roomId]);
 
   // --- HANDLERS ---
@@ -137,7 +138,6 @@ function Board() {
 
   const onMoveEnd = () => saveBoard();
 
-  // --- MOUSE & CURSOR LOGIC ---
   const onMouseMove = (e) => {
     if (!socket.id) return;
     const storedUserString = localStorage.getItem('user');
@@ -153,6 +153,33 @@ function Board() {
     };
     socket.emit("cursor-move", myCursor);
   };
+
+  // --- UNDO / REDO HANDLERS (COLLABORATIVE) ---
+  const handleUndo = useCallback(() => {
+    const pastState = undo(); 
+    if (pastState) {
+      // 1. Update Local Screen
+      setNodes(pastState.nodes); 
+      setEdges(pastState.edges);
+      
+      // 2. Broadcast to Room (Socket)
+      socket.emit("board-update", { roomId, nodes: pastState.nodes, edges: pastState.edges });
+      
+      // 3. Save to Database Immediately
+      saveBoard(pastState.nodes, pastState.edges);
+    }
+  }, [undo, setNodes, setEdges, roomId, saveBoard]);
+
+  const handleRedo = useCallback(() => {
+    const futureState = redo(); 
+    if (futureState) {
+      setNodes(futureState.nodes); 
+      setEdges(futureState.edges);
+      socket.emit("board-update", { roomId, nodes: futureState.nodes, edges: futureState.edges });
+      saveBoard(futureState.nodes, futureState.edges);
+    }
+  }, [redo, setNodes, setEdges, roomId, saveBoard]);
+
 
   // --- IMAGE UPLOAD HANDLERS ---
   const onDragOver = useCallback((event) => {
@@ -183,9 +210,7 @@ function Board() {
     [screenToFlowPosition, roomId, saveBoard, setNodes, takeSnapshot, getNodes, getEdges]
   );
 
-  const onImageClick = () => {
-    fileInputRef.current?.click();
-  };
+  const onImageClick = () => { fileInputRef.current?.click(); };
 
   const onImageChange = (event) => {
     const file = event.target.files[0];
@@ -224,24 +249,16 @@ function Board() {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
-        const pastState = undo();
-        if (pastState) {
-          setNodes(pastState.nodes);
-          setEdges(pastState.edges);
-        }
+        handleUndo(); 
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
         e.preventDefault();
-        const futureState = redo();
-        if (futureState) {
-          setNodes(futureState.nodes);
-          setEdges(futureState.edges);
-        }
+        handleRedo(); 
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, setNodes, setEdges]);
+  }, [handleUndo, handleRedo]);
 
   // --- SOCKET LISTENERS ---
   useEffect(() => {
@@ -266,11 +283,10 @@ function Board() {
     }
     fetchBoard();
 
-    const handleNodeDrag = (incomingNode) => {
+    // Standard Listeners
+    socket.on("node-drag", (incomingNode) => {
        setNodes((nds) => nds.map((node) => node.id === incomingNode.id ? { ...incomingNode, data: { ...incomingNode.data, onChange: onNodeTextChange } } : node));
-    };
-    
-    socket.on("node-drag", handleNodeDrag);
+    });
     socket.on("node-create", (newNode) => {
       setNodes((nds) => {
         if (nds.find(n => n.id === newNode.id)) return nds;
@@ -295,6 +311,15 @@ function Board() {
       });
     });
 
+    // *** LISTEN FOR BULK UPDATES (Undo/Redo from others) ***
+    socket.on("board-update", ({ nodes, edges }) => {
+      const hydratedNodes = nodes.map(n => ({
+        ...n, data: { ...n.data, onChange: onNodeTextChange }
+      }));
+      setNodes(hydratedNodes);
+      setEdges(edges);
+    });
+
     return () => {
       socket.off("node-drag");
       socket.off("node-create");
@@ -304,30 +329,13 @@ function Board() {
       socket.off("edges-delete");
       socket.off("cursor-move");
       socket.off("user-disconnected");
+      socket.off("board-update"); 
     };
   }, [roomId, setNodes, setEdges, setViewport, onNodeTextChange]); 
 
   const onNodeDrag = useCallback((_, node) => {
     socket.emit("node-drag", { roomId, node });
   }, [roomId]);
-
-
-  // --- *** KEY FIX HERE: WRAPPERS FOR BUTTONS *** ---
-  const handleUndo = useCallback(() => {
-    const pastState = undo(); 
-    if (pastState) {
-      setNodes(pastState.nodes); 
-      setEdges(pastState.edges);
-    }
-  }, [undo, setNodes, setEdges]);
-
-  const handleRedo = useCallback(() => {
-    const futureState = redo(); 
-    if (futureState) {
-      setNodes(futureState.nodes); 
-      setEdges(futureState.edges);
-    }
-  }, [redo, setNodes, setEdges]);
 
 
   // --- RENDER ---

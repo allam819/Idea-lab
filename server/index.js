@@ -80,7 +80,9 @@ io.on("connection", (socket) => {
   socket.on("cursor-move", (data) => {
     socket.to(data.roomId).emit("cursor-move", data);
   });
-
+  socket.on("board-update", ({ roomId, nodes, edges }) => {
+      socket.to(roomId).emit("board-update", { nodes, edges });
+    });
   socket.on("disconnect", () => {
     socket.broadcast.emit("user-disconnected", socket.id);
   });
