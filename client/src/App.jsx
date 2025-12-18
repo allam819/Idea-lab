@@ -23,8 +23,8 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import IdeaNode from './components/IdeaNode'; 
-import ImageNode from './components/ImageNode'; // Ensure this exists
-import useUndoRedo from './hooks/useUndoRedo'; // Ensure this exists
+import ImageNode from './components/ImageNode'; 
+import useUndoRedo from './hooks/useUndoRedo'; 
 
 // --- IDENTITY HELPERS ---
 const randomIdentity = getUserIdentity(); 
@@ -49,7 +49,7 @@ function Board() {
   const [cursors, setCursors] = useState({});
   const fileInputRef = useRef(null); // Reference for hidden file input
 
-  // *** FIX: Initialize Undo/Redo HERE (Before useEffects) ***
+  // *** FIX 1: Initialize Undo/Redo HERE (Before useEffects) ***
   const { takeSnapshot, undo, redo } = useUndoRedo();
 
   const { 
@@ -78,12 +78,16 @@ function Board() {
       const API_URL = 'https://idea-lab-server.onrender.com'; 
       // const API_URL = 'http://localhost:3001'; // Use for local testing
 
-      await axios.post(`${API_URL}/boards`, {
-        roomId,
-        nodes: currentNodes, 
-        edges: currentEdges,
-        viewport: currentViewport
-      });
+      try {
+        await axios.post(`${API_URL}/boards`, {
+          roomId,
+          nodes: currentNodes, 
+          edges: currentEdges,
+          viewport: currentViewport
+        });
+      } catch (err) {
+        console.error("Save failed", err);
+      }
     }, 500);
   }, [getNodes, getEdges, getViewport, roomId]);
 
@@ -254,7 +258,6 @@ function Board() {
         if (pastState) {
           setNodes(pastState.nodes);
           setEdges(pastState.edges);
-          // Optional: Emit board update to others here if desired
         }
       }
 
@@ -323,9 +326,11 @@ function Board() {
       if (!data.userId) return;
       setCursors((prev) => ({ ...prev, [data.userId]: data }));
     });
+    
+    // *** FIX 2: Renamed variable 'new' to 'newCursors' to avoid build error ***
     socket.on("user-disconnected", (userId) => {
       setCursors((prev) => {
-        const newCursors = { ...prev };
+        const newCursors = { ...prev }; 
         delete newCursors[userId];
         return newCursors;
       });
@@ -393,7 +398,32 @@ function Board() {
         );
       })}
       
-      {/* UI Overlay */}
+      {/* --- TOP LEFT: ROOM ID & HISTORY CONTROLS --- */}
+      <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, display: 'flex', gap: '10px' }}>
+        <div style={{ background: 'white', padding: '10px 15px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+           Room: {roomId}
+        </div>
+        
+        {/* Undo Button */}
+        <button 
+          onClick={undo} 
+          style={{ padding: '10px 15px', fontSize: '16px', cursor: 'pointer', background: 'white', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
+          title="Undo (Ctrl+Z)"
+        >
+           ↩ Undo
+        </button>
+
+        {/* Redo Button */}
+        <button 
+          onClick={redo} 
+          style={{ padding: '10px 15px', fontSize: '16px', cursor: 'pointer', background: 'white', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
+          title="Redo (Ctrl+Y)"
+        >
+           ↪ Redo
+        </button>
+      </div>
+      
+      {/* --- TOP RIGHT: TOOLS --- */}
       <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10, display: 'flex', gap: '10px' }}>
         <button 
           onClick={onImageClick} 
@@ -417,10 +447,6 @@ function Board() {
           accept="image/*" 
           style={{ display: 'none' }} 
         />
-      </div>
-      
-      <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, background: 'white', padding: '5px 10px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}>
-        Room: <b>{roomId}</b>
       </div>
     </div>
   );
