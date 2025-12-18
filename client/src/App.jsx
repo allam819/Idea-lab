@@ -5,6 +5,7 @@ import {
   ReactFlow, 
   Background, 
   Controls, 
+  MiniMap,            // <--- NEW: Imported MiniMap
   useNodesState, 
   useEdgesState, 
   addEdge,
@@ -18,7 +19,6 @@ import '@xyflow/react/dist/style.css';
 import { socket } from './socket';
 import { getUserIdentity } from './utils/userIdentity';
 
-// Import Pages & Components & Hooks
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -26,57 +26,45 @@ import IdeaNode from './components/IdeaNode';
 import ImageNode from './components/ImageNode'; 
 import useUndoRedo from './hooks/useUndoRedo'; 
 
-// --- IDENTITY HELPERS ---
 const randomIdentity = getUserIdentity(); 
 const me = randomIdentity; 
 
-// --- PROTECTED ROUTE COMPONENT ---
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!token) return <Navigate to="/login" replace />;
   return children;
 };
 
-// --- THE BOARD COMPONENT ---
+// --- LOADING COMPONENT ---
+const LoadingScreen = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ width: '40px', height: '40px', border: '4px solid #f3f3f3', borderTop: '4px solid #007bff', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+    <h3 style={{ fontFamily: 'sans-serif', color: '#555' }}>Loading your Idea Lab...</h3>
+    <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+  </div>
+);
+
 function Board() {
   const { roomId } = useParams();
   
-  // 1. INITIALIZE STATE & HOOKS
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [cursors, setCursors] = useState({});
+  const [isLoading, setIsLoading] = useState(true); // <--- NEW: Loading State
   const fileInputRef = useRef(null); 
 
-  // Initialize Undo/Redo Hook
   const { takeSnapshot, undo, redo } = useUndoRedo();
 
-  const { 
-    getNodes, 
-    getEdges, 
-    getViewport, 
-    setViewport, 
-    screenToFlowPosition, 
-    flowToScreenPosition 
-  } = useReactFlow(); 
+  const { getNodes, getEdges, getViewport, setViewport, screenToFlowPosition, flowToScreenPosition } = useReactFlow(); 
 
-  // Register Custom Node Types
-  const nodeTypes = useMemo(() => ({ 
-    idea: IdeaNode,
-    image: ImageNode
-  }), []);
+  const nodeTypes = useMemo(() => ({ idea: IdeaNode, image: ImageNode }), []);
 
-  // --- SAVE TO DB ---
-  // Now accepts optional 'nodes'/'edges' so we can save Undo/Redo states immediately
   const saveBoard = useCallback(async (manualNodes, manualEdges) => {
-    // If specific nodes are passed (like from Undo), use them. Otherwise use current state.
     const nodesToSave = manualNodes || getNodes();
     const edgesToSave = manualEdges || getEdges();
     const currentViewport = getViewport();
     
     const API_URL = 'https://idea-lab-server.onrender.com'; 
-    // const API_URL = 'http://localhost:3001'; 
 
     try {
       await axios.post(`${API_URL}/boards`, {
@@ -92,30 +80,20 @@ function Board() {
 
   // --- HANDLERS ---
   const onNodeTextChange = useCallback((id, newText) => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return { ...node, data: { ...node.data, label: newText, onChange: onNodeTextChange } };
-        }
-        return node;
-      })
-    );
+    setNodes((nds) => nds.map((node) => node.id === id ? { ...node, data: { ...node.data, label: newText, onChange: onNodeTextChange } } : node));
     socket.emit("text-change", { roomId, id, text: newText });
     saveBoard();
   }, [roomId, setNodes, saveBoard]);
 
-  const onConnect = useCallback(
-    (params) => {
-      setEdges((eds) => {
-        const newEdges = addEdge(params, eds);
-        takeSnapshot(getNodes(), newEdges); 
-        return newEdges;
-      });
-      socket.emit("edge-create", { roomId, edge: params });
-      saveBoard();
-    },
-    [setEdges, roomId, saveBoard, takeSnapshot, getNodes],
-  );
+  const onConnect = useCallback((params) => {
+    setEdges((eds) => {
+      const newEdges = addEdge(params, eds);
+      takeSnapshot(getNodes(), newEdges); 
+      return newEdges;
+    });
+    socket.emit("edge-create", { roomId, edge: params });
+    saveBoard();
+  }, [setEdges, roomId, saveBoard, takeSnapshot, getNodes]);
 
   const onNodesDelete = useCallback((deletedNodes) => {
     const ids = deletedNodes.map(n => n.id);
@@ -147,25 +125,16 @@ function Board() {
       if (storedUser.name) currentName = storedUser.name;
     }
     const flowPosition = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    const myCursor = { 
-      x: flowPosition.x, y: flowPosition.y, 
-      userId: socket.id, userName: currentName, userColor: me.color, roomId 
-    };
+    const myCursor = { x: flowPosition.x, y: flowPosition.y, userId: socket.id, userName: currentName, userColor: me.color, roomId };
     socket.emit("cursor-move", myCursor);
   };
 
-  // --- UNDO / REDO HANDLERS (COLLABORATIVE) ---
   const handleUndo = useCallback(() => {
     const pastState = undo(); 
     if (pastState) {
-      // 1. Update Local Screen
       setNodes(pastState.nodes); 
       setEdges(pastState.edges);
-      
-      // 2. Broadcast to Room (Socket)
       socket.emit("board-update", { roomId, nodes: pastState.nodes, edges: pastState.edges });
-      
-      // 3. Save to Database Immediately
       saveBoard(pastState.nodes, pastState.edges);
     }
   }, [undo, setNodes, setEdges, roomId, saveBoard]);
@@ -180,35 +149,36 @@ function Board() {
     }
   }, [redo, setNodes, setEdges, roomId, saveBoard]);
 
+  // --- SHARE FUNCTION ---
+  const copyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    alert("✅ Link copied to clipboard! Send it to your friends.");
+  };
 
-  // --- IMAGE UPLOAD HANDLERS ---
   const onDragOver = useCallback((event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  const onDrop = useCallback(
-    (event) => {
-      event.preventDefault();
-      const file = event.dataTransfer.files[0];
-      if (!file || !file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64String = e.target.result;
-        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        const newNode = {
-          id: Date.now().toString(), type: 'image', position,
-          data: { src: base64String },
-        };
-        setNodes((nds) => [...nds, newNode]);
-        takeSnapshot([...getNodes(), newNode], getEdges()); 
-        socket.emit("node-create", { roomId, node: newNode });
-        saveBoard();
+  const onDrop = useCallback((event) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64String = e.target.result;
+      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const newNode = {
+        id: Date.now().toString(), type: 'image', position,
+        data: { src: base64String },
       };
-      reader.readAsDataURL(file);
-    },
-    [screenToFlowPosition, roomId, saveBoard, setNodes, takeSnapshot, getNodes, getEdges]
-  );
+      setNodes((nds) => [...nds, newNode]);
+      takeSnapshot([...getNodes(), newNode], getEdges()); 
+      socket.emit("node-create", { roomId, node: newNode });
+      saveBoard();
+    };
+    reader.readAsDataURL(file);
+  }, [screenToFlowPosition, roomId, saveBoard, setNodes, takeSnapshot, getNodes, getEdges]);
 
   const onImageClick = () => { fileInputRef.current?.click(); };
 
@@ -244,23 +214,15 @@ function Board() {
     saveBoard();
   };
 
-  // --- KEYBOARD LISTENERS ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo(); 
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
-        e.preventDefault();
-        handleRedo(); 
-      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); handleRedo(); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
 
-  // --- SOCKET LISTENERS ---
   useEffect(() => {
     socket.emit("join-room", roomId);
     const API_URL = 'https://idea-lab-server.onrender.com';
@@ -270,20 +232,19 @@ function Board() {
         const response = await axios.get(`${API_URL}/boards/${roomId}`);
         const { nodes, edges, viewport } = response.data;
         if (nodes) {
-          const hydratedNodes = nodes.map(n => ({
-            ...n, data: { ...n.data, onChange: onNodeTextChange }
-          }));
+          const hydratedNodes = nodes.map(n => ({ ...n, data: { ...n.data, onChange: onNodeTextChange } }));
           setNodes(hydratedNodes);
         }
         if (edges) setEdges(edges);
         if (viewport) setViewport(viewport);
       } catch (error) {
         console.error("Failed to load board:", error);
+      } finally {
+        setIsLoading(false); // <--- STOP LOADING
       }
     }
     fetchBoard();
 
-    // Standard Listeners
     socket.on("node-drag", (incomingNode) => {
        setNodes((nds) => nds.map((node) => node.id === incomingNode.id ? { ...incomingNode, data: { ...incomingNode.data, onChange: onNodeTextChange } } : node));
     });
@@ -310,35 +271,23 @@ function Board() {
         return newCursors;
       });
     });
-
-    // *** LISTEN FOR BULK UPDATES (Undo/Redo from others) ***
     socket.on("board-update", ({ nodes, edges }) => {
-      const hydratedNodes = nodes.map(n => ({
-        ...n, data: { ...n.data, onChange: onNodeTextChange }
-      }));
+      const hydratedNodes = nodes.map(n => ({ ...n, data: { ...n.data, onChange: onNodeTextChange } }));
       setNodes(hydratedNodes);
       setEdges(edges);
     });
 
     return () => {
-      socket.off("node-drag");
-      socket.off("node-create");
-      socket.off("text-change");
-      socket.off("edge-create");
-      socket.off("nodes-delete");
-      socket.off("edges-delete");
-      socket.off("cursor-move");
-      socket.off("user-disconnected");
-      socket.off("board-update"); 
+      socket.off("node-drag"); socket.off("node-create"); socket.off("text-change");
+      socket.off("edge-create"); socket.off("nodes-delete"); socket.off("edges-delete");
+      socket.off("cursor-move"); socket.off("user-disconnected"); socket.off("board-update"); 
     };
   }, [roomId, setNodes, setEdges, setViewport, onNodeTextChange]); 
 
-  const onNodeDrag = useCallback((_, node) => {
-    socket.emit("node-drag", { roomId, node });
-  }, [roomId]);
+  const onNodeDrag = useCallback((_, node) => { socket.emit("node-drag", { roomId, node }); }, [roomId]);
 
+  if (isLoading) return <LoadingScreen />;
 
-  // --- RENDER ---
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }} onMouseMove={onMouseMove}>
       <ReactFlow
@@ -359,6 +308,11 @@ function Board() {
       >
         <Background variant="dots" gap={12} size={1} />
         <Controls />
+        {/* NEW: MiniMap added here */}
+        <MiniMap 
+           position="bottom-right" 
+           nodeColor={(node) => node.type === 'image' ? '#ff0071' : '#FFD700'} 
+        />
       </ReactFlow>
 
       {/* CURSORS */}
@@ -366,11 +320,7 @@ function Board() {
         const screenPos = flowToScreenPosition({ x: cursor.x, y: cursor.y });
         if (!screenPos) return null;
         return (
-          <div key={userId} style={{ 
-            position: 'absolute', left: screenPos.x, top: screenPos.y, 
-            pointerEvents: 'none', zIndex: 9999, transition: 'all 0.1s ease', 
-            transform: 'translate(-50%, -50%)' 
-          }}>
+          <div key={userId} style={{ position: 'absolute', left: screenPos.x, top: screenPos.y, pointerEvents: 'none', zIndex: 9999, transition: 'all 0.1s ease', transform: 'translate(-50%, -50%)' }}>
             <div style={{ width: '12px', height: '12px', backgroundColor: cursor.userColor || 'red', borderRadius: '50%' }} />
             <div style={{ backgroundColor: cursor.userColor || 'red', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', marginTop: '4px', whiteSpace: 'nowrap' }}>
               {cursor.userName || "Guest"}
@@ -384,46 +334,36 @@ function Board() {
         <div style={{ background: 'white', padding: '10px 15px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
            Room: {roomId}
         </div>
-        <button 
-          onClick={handleUndo} 
-          style={{ padding: '10px 15px', fontSize: '16px', cursor: 'pointer', background: 'white', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
-          title="Undo (Ctrl+Z)"
-        >
-           ↩ Undo
-        </button>
-        <button 
-          onClick={handleRedo} 
-          style={{ padding: '10px 15px', fontSize: '16px', cursor: 'pointer', background: 'white', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
-          title="Redo (Ctrl+Y)"
-        >
-           ↪ Redo
-        </button>
+        <button onClick={handleUndo} style={btnStyle} title="Undo (Ctrl+Z)"> ↩ </button>
+        <button onClick={handleRedo} style={btnStyle} title="Redo (Ctrl+Y)"> ↪ </button>
       </div>
       
       {/* TOP RIGHT TOOLS */}
       <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10, display: 'flex', gap: '10px' }}>
-        <button 
-          onClick={onImageClick} 
-          style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
-        >
-          + Image
-        </button>
-        <button 
-          onClick={addCard} 
-          style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: '#FFD700', color: '#333', border: 'none', borderRadius: '5px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
-        >
-          + Sticky Note
-        </button>
-        <input 
-          type="file" ref={fileInputRef} onChange={onImageChange} 
-          accept="image/*" style={{ display: 'none' }} 
-        />
+        {/* NEW: Share Button */}
+        <button onClick={copyLink} style={{ ...btnStyle, background: '#28a745', color: 'white' }}> 🔗 Share </button>
+
+        <button onClick={onImageClick} style={{ ...btnStyle, background: '#007bff', color: 'white' }}> + Image </button>
+        <button onClick={addCard} style={{ ...btnStyle, background: '#FFD700', color: '#333' }}> + Sticky Note </button>
+        <input type="file" ref={fileInputRef} onChange={onImageChange} accept="image/*" style={{ display: 'none' }} />
       </div>
     </div>
   );
 }
 
-// ROUTER
+// Helper style for cleaner code
+const btnStyle = {
+  padding: '10px 15px',
+  fontSize: '16px',
+  cursor: 'pointer',
+  background: 'white',
+  color: '#333',
+  border: 'none',
+  borderRadius: '5px',
+  fontWeight: 'bold',
+  boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+};
+
 export default function App() {
   return (
     <BrowserRouter>
